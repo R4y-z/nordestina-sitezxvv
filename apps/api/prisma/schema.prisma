@@ -1,0 +1,667 @@
+// Nordestina Sistema de Restaurante - Schema Prisma Completo
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+ url = env("DATABASE_URL")
+}
+
+// ==================== ENUMS ====================
+
+enum Role {
+  ADMIN
+  MANAGER
+  CASHIER
+  WAITER
+  KITCHEN
+  DELIVERY
+}
+
+enum OrderType {
+  TABLE
+  DELIVERY
+  TAKEAWAY
+  QUENTINHA
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PREPARING
+  READY
+  DELIVERING
+  DELIVERED
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  PIX
+  CREDIT_CARD
+  DEBIT_CARD
+  VOUCHER
+  PAYMENT_LINK
+  MIXED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  CANCELLED
+  REFUNDED
+  PARTIAL
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+  MAINTENANCE
+}
+
+enum DeliveryStatus {
+  WAITING
+  ASSIGNED
+  PICKING_UP
+  ON_THE_WAY
+  DELIVERED
+  FAILED
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+  WASTE
+  TRANSFER
+}
+
+enum FinancialCategory {
+  REVENUE
+  COST_OF_GOODS
+  OPERATIONAL
+  PAYROLL
+  MAINTENANCE
+  MARKETING
+  TAX
+  OTHER
+}
+
+enum NotificationType {
+  NEW_ORDER
+  ORDER_STATUS
+  KITCHEN_ALERT
+  PAYMENT
+  STOCK_LOW
+  SYSTEM
+}
+
+enum ComandaStatus {
+  ABERTA
+  FECHAMENTO
+  FINALIZADA
+  CANCELADA
+}
+
+// ==================== MODELOS ====================
+
+model User {
+  id          String    @id @default(cuid())
+  name        String
+  email       String    @unique
+  phone       String?
+  password    String
+  role        Role      @default(WAITER)
+  avatar      String?
+  active      Boolean   @default(true)
+  pin         String?   // PIN para acesso rápido no caixa
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  orders          Order[]         @relation("CreatedByUser")
+  cashierSessions CashierSession[]
+  deliveries      Delivery[]
+  refreshTokens   RefreshToken[]
+  comandas        Comanda[]       @relation("ComandasCreatedBy")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model Customer {
+  id          String    @id @default(cuid())
+  name        String
+  email       String?   @unique
+  phone       String    @unique
+  cpf         String?   @unique
+  birthdate   DateTime?
+  active      Boolean   @default(true)
+  totalOrders Int       @default(0)
+  totalSpent  Float     @default(0)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  addresses   CustomerAddress[]
+  orders      Order[]
+  loyaltyPoints LoyaltyPoint[]
+
+  @@map("customers")
+}
+
+model CustomerAddress {
+  id           String   @id @default(cuid())
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  label        String   @default("Casa")
+  street       String
+  number       String
+  complement   String?
+  neighborhood String
+  city         String
+  state        String
+  zipCode      String
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@map("customer_addresses")
+}
+
+model LoyaltyPoint {
+  id         String   @id @default(cuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id])
+  points     Int
+  description String
+  orderId    String?
+  createdAt  DateTime @default(now())
+
+  @@map("loyalty_points")
+}
+
+model Category {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  image       String?
+  color       String?
+  icon        String?
+  sortOrder   Int       @default(0)
+  active      Boolean   @default(true)
+  showOnStore Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+
+  @@map("categories")
+}
+
+model Product {
+  id              String    @id @default(cuid())
+  categoryId      String
+  category        Category  @relation(fields: [categoryId], references: [id])
+  name            String
+  slug            String    @unique
+  description     String?
+  image           String?
+  price           Float
+  costPrice       Float     @default(0)
+  promotionalPrice Float?
+  sortOrder       Int       @default(0)
+  active          Boolean   @default(true)
+  available       Boolean   @default(true)
+  showOnStore     Boolean   @default(true)
+  featuredOnStore Boolean   @default(false)
+  isKgProduct     Boolean   @default(false) // Para self-service por peso
+  preparationTime Int       @default(15)    // em minutos
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  addons          ProductAddon[]
+  combos          ComboItem[]
+  orderItems      OrderItem[]
+  stockItems      StockItem[]
+  stockMovements  StockMovement[]
+  comandaItems    ComandaItem[]
+
+  @@map("products")
+}
+
+model ProductAddon {
+  id          String    @id @default(cuid())
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  name        String
+  price       Float     @default(0)
+  maxQty      Int       @default(1)
+  minQty      Int       @default(0)
+  sortOrder   Int       @default(0)
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  orderItemAddons OrderItemAddon[]
+
+  @@map("product_addons")
+}
+
+model Combo {
+  id          String    @id @default(cuid())
+  name        String
+  slug        String    @unique
+  description String?
+  image       String?
+  price       Float
+  active      Boolean   @default(true)
+  showOnStore Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items       ComboItem[]
+  orderItems  OrderItem[]
+
+  @@map("combos")
+}
+
+model ComboItem {
+  id        String  @id @default(cuid())
+  comboId   String
+  combo     Combo   @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id])
+  quantity  Int     @default(1)
+
+  @@map("combo_items")
+}
+
+model Coupon {
+  id             String    @id @default(cuid())
+  code           String    @unique
+  description    String?
+  discountType   String    @default("PERCENT") // PERCENT | FIXED
+  discountValue  Float
+  minOrderValue  Float     @default(0)
+  maxUses        Int?
+  usedCount      Int       @default(0)
+  validFrom      DateTime  @default(now())
+  validUntil     DateTime?
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+
+  orders         Order[]
+
+  @@map("coupons")
+}
+
+model Table {
+  id          String      @id @default(cuid())
+  number      Int         @unique
+  name        String?
+  capacity    Int         @default(4)
+  status      TableStatus @default(AVAILABLE)
+  qrCode      String?     @unique
+  area        String?     // ex: "Salão Principal", "Varanda"
+  active      Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  orders      Order[]
+  comandas    Comanda[]
+
+  @@map("tables")
+}
+
+model Order {
+  id              String        @id @default(cuid())
+  orderNumber     String        @unique
+  type            OrderType
+  status          OrderStatus   @default(PENDING)
+  tableId         String?
+  table           Table?        @relation(fields: [tableId], references: [id])
+  customerId      String?
+  customer        Customer?     @relation(fields: [customerId], references: [id])
+  createdById     String?
+  createdBy       User?         @relation("CreatedByUser", fields: [createdById], references: [id])
+  couponId        String?
+  coupon          Coupon?       @relation(fields: [couponId], references: [id])
+  subtotal        Float         @default(0)
+  discount        Float         @default(0)
+  deliveryFee     Float         @default(0)
+  serviceFee      Float         @default(0) // Taxa de serviço 10%
+  total           Float         @default(0)
+  notes           String?
+  // Endereço para delivery
+  deliveryAddress String?
+  deliveryNeighborhood String?
+  deliveryCity    String?
+  deliveryZipCode String?
+  // Tempo estimado
+  estimatedTime   Int?          // em minutos
+  // NFe
+  nfeKey          String?
+  nfeStatus       String?
+  // Timestamps de status
+  confirmedAt     DateTime?
+  preparingAt     DateTime?
+  readyAt         DateTime?
+  deliveredAt     DateTime?
+  cancelledAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items           OrderItem[]
+  payments        Payment[]
+  delivery        Delivery?
+  kgWeights       KgWeight[]
+
+  @@map("orders")
+}
+
+model OrderItem {
+  id          String    @id @default(cuid())
+  orderId     String
+  order       Order     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product?  @relation(fields: [productId], references: [id])
+  comboId     String?
+  combo       Combo?    @relation(fields: [comboId], references: [id])
+  name        String    // Snapshot do nome
+  price       Float     // Snapshot do preço
+  quantity    Int       @default(1)
+  notes       String?
+  sentToKitchen Boolean @default(false)
+  createdAt   DateTime  @default(now())
+
+  addons      OrderItemAddon[]
+
+  @@map("order_items")
+}
+
+model OrderItemAddon {
+  id           String       @id @default(cuid())
+  orderItemId  String
+  orderItem    OrderItem    @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  addonId      String?
+  addon        ProductAddon? @relation(fields: [addonId], references: [id])
+  name         String
+  price        Float
+  quantity     Int          @default(1)
+
+  @@map("order_item_addons")
+}
+
+model KgWeight {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id])
+  weight    Float    // em gramas
+  pricePerKg Float
+  total     Float
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@map("kg_weights")
+}
+
+model Payment {
+  id            String        @id @default(cuid())
+  orderId       String
+  order         Order         @relation(fields: [orderId], references: [id])
+  method        PaymentMethod
+  status        PaymentStatus @default(PENDING)
+  amount        Float
+  change        Float         @default(0) // Troco para dinheiro
+  // Integração externa
+  externalId    String?       // ID na Stone/PSP
+  externalRef   String?
+  pixKey        String?
+  pixQrCode     String?
+  cardLast4     String?
+  receiptUrl    String?
+  paidAt        DateTime?
+  createdAt     DateTime      @default(now())
+
+  @@map("payments")
+}
+
+model Delivery {
+  id              String         @id @default(cuid())
+  orderId         String         @unique
+  order           Order          @relation(fields: [orderId], references: [id])
+  delivererId     String?
+  deliverer       User?          @relation(fields: [delivererId], references: [id])
+  status          DeliveryStatus @default(WAITING)
+  neighborhood    String?
+  fee             Float          @default(0)
+  estimatedTime   Int?
+  assignedAt      DateTime?
+  pickedAt        DateTime?
+  deliveredAt     DateTime?
+  notes           String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("deliveries")
+}
+
+model DeliveryNeighborhood {
+  id        String   @id @default(cuid())
+  name      String
+  city      String
+  fee       Float
+  minTime   Int      @default(30) // minutos
+  maxTime   Int      @default(60)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@map("delivery_neighborhoods")
+}
+
+model CashierSession {
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  openingAmount Float     @default(0)
+  closingAmount Float?
+  totalSales    Float     @default(0)
+  totalCash     Float     @default(0)
+  totalPix      Float     @default(0)
+  totalCard     Float     @default(0)
+  openedAt      DateTime  @default(now())
+  closedAt      DateTime?
+  notes         String?
+
+  bleeds        CashierBleed[]
+
+  @@map("cashier_sessions")
+}
+
+model CashierBleed {
+  id               String         @id @default(cuid())
+  cashierSessionId String
+  cashierSession   CashierSession @relation(fields: [cashierSessionId], references: [id])
+  amount           Float
+  reason           String
+  createdAt        DateTime       @default(now())
+
+  @@map("cashier_bleeds")
+}
+
+model StockItem {
+  id           String   @id @default(cuid())
+  productId    String?
+  product      Product? @relation(fields: [productId], references: [id])
+  name         String
+  unit         String   @default("un") // un, kg, g, L, ml
+  currentQty   Float    @default(0)
+  minQty       Float    @default(0)
+  costPerUnit  Float    @default(0)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  movements    StockMovement[]
+
+  @@map("stock_items")
+}
+
+model StockMovement {
+  id          String            @id @default(cuid())
+  stockItemId String
+  stockItem   StockItem         @relation(fields: [stockItemId], references: [id])
+  productId   String?
+  product     Product?          @relation(fields: [productId], references: [id])
+  type        StockMovementType
+  quantity    Float
+  unitCost    Float             @default(0)
+  totalCost   Float             @default(0)
+  notes       String?
+  orderId     String?
+  createdAt   DateTime          @default(now())
+
+  @@map("stock_movements")
+}
+
+model FinancialTransaction {
+  id          String            @id @default(cuid())
+  type        String            // REVENUE | EXPENSE
+  category    FinancialCategory
+  description String
+  amount      Float
+  date        DateTime          @default(now())
+  orderId     String?
+  notes       String?
+  createdAt   DateTime          @default(now())
+
+  @@map("financial_transactions")
+}
+
+model Expense {
+  id          String    @id @default(cuid())
+  category    String
+  description String
+  amount      Float
+  date        DateTime
+  supplier    String?
+  receipt     String?
+  notes       String?
+  createdAt   DateTime  @default(now())
+
+  @@map("expenses")
+}
+
+model Banner {
+  id          String    @id @default(cuid())
+  title       String?
+  image       String
+  link        String?
+  sortOrder   Int       @default(0)
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+
+  @@map("banners")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  type      NotificationType
+  title     String
+  message   String
+  data      Json?
+  read      Boolean          @default(false)
+  userId    String?
+  createdAt DateTime         @default(now())
+
+  @@map("notifications")
+}
+
+model SystemConfig {
+  id              String    @id @default(cuid())
+  key             String    @unique
+  value           String
+  description     String?
+  updatedAt       DateTime  @updatedAt
+
+  @@map("system_configs")
+}
+
+model SystemLog {
+  id        String   @id @default(cuid())
+  level     String   @default("INFO")
+  action    String
+  userId    String?
+  data      Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@map("system_logs")
+}
+
+// ==================== COMANDAS (SELF-SERVICE) ====================
+
+model Comanda {
+  id          String        @id @default(cuid())
+  numero      String        @unique
+  status      ComandaStatus @default(ABERTA)
+  tableId     String?
+  table       Table?        @relation(fields: [tableId], references: [id])
+  createdById String?
+  createdBy   User?         @relation("ComandasCreatedBy", fields: [createdById], references: [id])
+  observacao  String?
+  totalValue  Float         @default(0)
+  openedAt    DateTime      @default(now())
+  closedAt    DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  items    ComandaItem[]
+  payments ComandaPayment[]
+
+  @@map("comandas")
+}
+
+model ComandaItem {
+  id        String   @id @default(cuid())
+  comandaId String
+  comanda   Comanda  @relation(fields: [comandaId], references: [id], onDelete: Cascade)
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  name      String             // snapshot do nome no momento do lançamento
+  tipo      String   @default("UNITARIO") // UNITARIO | KG
+  quantity  Float    @default(1)          // unidades (para UNITARIO)
+  peso      Float?                        // peso em KG (para KG)
+  price     Float                         // preço unitário ou por KG
+  subtotal  Float                         // calculado: quantity*price ou peso*price
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@map("comanda_items")
+}
+
+model ComandaPayment {
+  id        String        @id @default(cuid())
+  comandaId String
+  comanda   Comanda       @relation(fields: [comandaId], references: [id])
+  method    PaymentMethod
+  amount    Float
+  change    Float         @default(0)
+  notes     String?
+  paidAt    DateTime      @default(now())
+  createdAt DateTime      @default(now())
+
+  @@map("comanda_payments")
+}
